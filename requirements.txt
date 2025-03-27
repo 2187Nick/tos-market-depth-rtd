@@ -1,0 +1,13 @@
+colorama
+comtypes
+concurrent_log_handler
+pywin32
+PyYAML
+tabulate
+plotly
+pandas
+pytz
+scipy
+python-dateutil
+requests
+dash
