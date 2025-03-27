@@ -12,6 +12,7 @@ import plotly.graph_objects as go
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 import time
+import pytz
 
 from src.db.database import BookmapDatabase
 from src.core.logger import get_logger
@@ -144,6 +145,9 @@ def fetch_market_depth_data(db: BookmapDatabase,
     
     # Convert timestamp to datetime for better plotting
     df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+    # Convert to US/Eastern timezone
+    est_tz = pytz.timezone('US/Eastern')
+    df['datetime'] = df['datetime'].dt.tz_localize('UTC').dt.tz_convert(est_tz)
     
     logger.info(f"Retrieved {len(df)} market depth records for {symbol}")
     
@@ -192,6 +196,9 @@ def fetch_last_size_data(db: BookmapDatabase,
     
     # Convert timestamp to datetime for better plotting
     df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+    # Convert to US/Eastern timezone
+    est_tz = pytz.timezone('US/Eastern')
+    df['datetime'] = df['datetime'].dt.tz_localize('UTC').dt.tz_convert(est_tz)
     
     logger.info(f"Retrieved {len(df)} trade size records for {symbol}")
     
@@ -255,7 +262,8 @@ def prepare_heatmap_data(df: pd.DataFrame) -> tuple:
     
     # Map of price to row index and timestamp to column index
     price_to_idx = {price: i for i, price in enumerate(prices)}
-    time_to_idx = {pd.Timestamp(time): i for i, time in enumerate(times)}
+    # Use the timezone-aware datetime objects directly as keys
+    time_to_idx = {time: i for i, time in enumerate(times)}
     
     # Debug counters
     bid_count = 0
@@ -865,7 +873,8 @@ def update_bookmap_live(fig: go.Figure,
         showscale=False,
         zmin=0,
         zmax=1,
-        yhoverformat='.2f'
+        yhoverformat='.2f',
+        hovertemplate='Time: %{x}<br>Price: %{y}<br>Bid Size: %{customdata:,d}<extra></extra>'
     )
     
     # Update ask heatmap
@@ -878,7 +887,8 @@ def update_bookmap_live(fig: go.Figure,
         showscale=False,
         zmin=0,
         zmax=1,
-        yhoverformat='.2f'
+        yhoverformat='.2f',
+        hovertemplate='Time: %{x}<br>Price: %{y}<br>Ask Size: %{customdata:,d}<extra></extra>'
     )
 
     # Get current y-axis range

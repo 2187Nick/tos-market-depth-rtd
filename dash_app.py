@@ -404,11 +404,11 @@ class BookmapDashApp:
                     (valid_fig and len(current_fig.data) < 2) or 
                     (zoom_data is not None and 'symbol_change' in zoom_data)):
                     # Create the bookmap visualization from scratch
-                    end_time = time.time()
-                    
+                    end_time = time.time() # UTC epoch seconds
+
                     # Load all data by not specifying start_time
-                    # But set the display range to last 60 seconds
-                    display_start = end_time - 60  # Show last 60 seconds by default
+                    # Set the display range to last 60 seconds
+                    display_start = end_time - 60  # UTC epoch seconds
                     
                     # Get current y-axis range if available
                     current_range = None
@@ -424,9 +424,10 @@ class BookmapDashApp:
                         current_range=current_range
                     )
                     
-                    # Set the x-axis range to show only the last 60 seconds
-                    display_start_dt = pd.to_datetime(display_start, unit='s')
-                    display_end_dt = pd.to_datetime(end_time, unit='s')
+                    # Set the x-axis range to show only the last 60 seconds in EST
+                    est_tz = pytz.timezone('US/Eastern')
+                    display_start_dt = pd.Timestamp(display_start, unit='s', tz='UTC').tz_convert(est_tz)
+                    display_end_dt = pd.Timestamp(end_time, unit='s', tz='UTC').tz_convert(est_tz)
                     fig.update_xaxes(range=[display_start_dt, display_end_dt])
                     
                 else:
@@ -467,12 +468,16 @@ class BookmapDashApp:
                         logger.warning(f"Error applying zoom state: {e}")
                         # Continue without applying zoom state
                 
-                return fig, f"Last update: {datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M:%S')} - {count} records"
+                # Update status message (already uses EST)
+                est_now = datetime.now(pytz.timezone('US/Eastern'))
+                return fig, f"Last update: {est_now.strftime('%H:%M:%S %Z')} - {count} records"
                 
                 
             except Exception as e:
                 logger.error(f"Error updating bookmap: {e}", exc_info=True)
-                return go.Figure(), f"Error: {str(e)}"
+                # Update status message with error details
+                est_now = datetime.now(pytz.timezone('US/Eastern'))
+                return go.Figure(), f"Error at {est_now.strftime('%H:%M:%S %Z')}: {str(e)}"
         
         # Clientside callback to store zoom level when user interacts with chart
         self.app.clientside_callback(
