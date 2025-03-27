@@ -2,6 +2,8 @@
 
 A Bookmap-style visualization tool for displaying real-time market depth data from ThinkorSwim's RTD server, providing a dynamic view of market liquidity.
 
+![](https://github.com/user-attachments/assets/ed78e5ea-8d38-48fa-883a-f53a3b072b1e)
+
 ## Features
 
 - Real-time market depth visualization in Bookmap style
@@ -11,8 +13,6 @@ A Bookmap-style visualization tool for displaying real-time market depth data fr
 - Responsive design with zoom and pause controls
 - Symbol switching without restarting the application
 - Historical view
-
-![](https://github.com/user-attachments/assets/ed78e5ea-8d38-48fa-883a-f53a3b072b1e)
 
 ## Installation
 

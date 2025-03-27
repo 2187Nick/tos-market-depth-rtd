@@ -976,4 +976,3 @@ def update_bookmap_live(fig: go.Figure,
         ))
 
     return fig
-

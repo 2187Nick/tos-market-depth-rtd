@@ -2,6 +2,7 @@
 from dash import Dash, Input, Output, State, html, dcc, exceptions, ClientsideFunction, no_update
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+import pytz
 import time
 import threading
 import webbrowser
@@ -466,7 +467,8 @@ class BookmapDashApp:
                         logger.warning(f"Error applying zoom state: {e}")
                         # Continue without applying zoom state
                 
-                return fig, f"Last update: {datetime.now().strftime('%H:%M:%S')} - {count} records"
+                return fig, f"Last update: {datetime.now(pytz.timezone('US/Eastern')).strftime('%H:%M:%S')} - {count} records"
+                
                 
             except Exception as e:
                 logger.error(f"Error updating bookmap: {e}", exc_info=True)
