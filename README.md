@@ -12,9 +12,7 @@ A Bookmap-style visualization tool for displaying real-time market depth data fr
 - Symbol switching without restarting the application
 - Historical view
 
-## Screenshots
-
-[Screenshots would go here]
+![](https://github.com/user-attachments/assets/ed78e5ea-8d38-48fa-883a-f53a3b072b1e)
 
 ## Installation
 
@@ -35,7 +33,7 @@ cd tos-market-depth-rtd
 2. Create a virtual environment
 ```
 python -m venv venv
-venv\Scripts\activate
+venv/bin/activate
 ```
 
 3. Install dependencies

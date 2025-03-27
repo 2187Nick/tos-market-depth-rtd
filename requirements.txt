@@ -6,8 +6,5 @@ PyYAML
 tabulate
 plotly
 pandas
-pytz
-scipy
-python-dateutil
 requests
 dash
