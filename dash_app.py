@@ -108,17 +108,45 @@ class BookmapDashApp:
                         localStorage.setItem('lastSymbol', symbol);
                     }
                     
+                    // Function to setup the Enter key listener
+                    function setupEnterKeyListener() {
+                        const symbolInput = document.getElementById('symbol-input');
+                        const startButton = document.getElementById('start-button');
+                        
+                        if (symbolInput && startButton) {
+                            symbolInput.addEventListener('keydown', function(event) {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault();
+                                    console.log('Enter key pressed, triggering start button');
+                                    startButton.click();
+                                }
+                            });
+                            return true;
+                        }
+                        return false;
+                    }
+                    
                     // Initialize on page load
                     window.addEventListener('load', function() {
                         console.log('Page loaded, checking for stored symbol');
                         const storedSymbol = getStoredSymbol();
                         if (storedSymbol) {
-                            console.log('Found stored symbol:', storedSymbol);
-                            const symbolInput = document.querySelector('#symbol-input');
+                            const symbolInput = document.getElementById('symbol-input');
                             if (symbolInput) {
                                 symbolInput.value = storedSymbol;
-                                console.log('Set input value to stored symbol');
+                                console.log('Set input value to stored symbol:', storedSymbol);
                             }
+                        }
+                        
+                        // Try to setup listener immediately
+                        if (!setupEnterKeyListener()) {
+                            // If components aren't ready, use a MutationObserver to wait for them
+                            const observer = new MutationObserver(function(mutations, observer) {
+                                if (setupEnterKeyListener()) {
+                                    observer.disconnect();
+                                }
+                            });
+                            observer.observe(document.body, { childList: true, subtree: true });
                         }
                     });
                 </script>
