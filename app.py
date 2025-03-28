@@ -8,11 +8,8 @@ import time
 import threading
 import webbrowser
 import pythoncom
-from threading import Timer
 from queue import Queue
-from queue import Empty
 
-from config.quote_types import QuoteType
 from src.core.error_handler import RTDError
 from src.core.logger import get_logger
 from src.core.settings import SETTINGS

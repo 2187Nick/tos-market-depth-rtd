@@ -254,7 +254,7 @@ class RTDClient(COMObject):
             pythoncom.CoInitialize()
             print("COM initialized")
 
-            time.sleep(1)  # Small delay to ensure COM is ready
+            time.sleep(.5)  # Small delay to ensure COM is ready
             
             # Create COM server instance
             self.server = CreateObject(
