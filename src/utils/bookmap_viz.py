@@ -41,6 +41,15 @@ def create_bookmap_figure(title: str = "Market Depth Bookmap") -> go.Figure:
     """
     fig = go.Figure()
     
+    # Add an invisible trace to ensure the plot renders properly
+    fig.add_trace(go.Scatter(
+        x=[],
+        y=[],
+        mode='markers',
+        marker=dict(color='rgba(0,0,0,0)'),
+        showlegend=False
+    ))
+    
     fig.update_layout(
         title=title,
         xaxis_title="Time (EST)",  # Updated to show EST timezone
@@ -50,7 +59,7 @@ def create_bookmap_figure(title: str = "Market Depth Bookmap") -> go.Figure:
         plot_bgcolor='rgb(0,0,0)',  # Pure black background
         paper_bgcolor='rgb(0,0,0)',  # Pure black background
         font=dict(color='white', size=20),  # Reduced base font size
-        margin=dict(l=50, r=200, t=50, b=50),  # Increased right margin from 200 to 300 for price and size columns
+        margin=dict(l=50, r=200, t=50, b=50),  # Increased right margin for price and size columns
         showlegend=True,
         legend=dict(
             orientation="h",
@@ -73,14 +82,17 @@ def create_bookmap_figure(title: str = "Market Depth Bookmap") -> go.Figure:
             constrain='domain',  # This constrains the axis to the domain
             constraintoward='center',  # Centers the constraint
             scaleanchor='y',  # This ensures consistent scaling
-            tickfont=dict(size=20)  # Added explicit tick font size
+            tickfont=dict(size=20),  # Added explicit tick font size
+            range=[0, 1]  # Set default range to ensure proper rendering
         ),
         # Time axis
         xaxis=dict(
             showgrid=True,
             gridcolor='rgba(80,80,80,0.3)',
             gridwidth=1,
-            tickfont=dict(size=20)  # Added explicit tick font size
+            tickfont=dict(size=20),  # Added explicit tick font size
+            range=[datetime.now(pytz.timezone('US/Eastern')) - timedelta(minutes=5), 
+                  datetime.now(pytz.timezone('US/Eastern'))]  # Set default range
         )
     )
     
@@ -114,7 +126,7 @@ def fetch_market_depth_data(db: BookmapDatabase,
     # Build the SQL query based on whether start_time is provided
     if start_time is not None:
         query = """
-            SELECT price, bid_size, ask_size, timestamp,
+            SELECT symbol, price, bid_size, ask_size, timestamp,
                    CASE WHEN bid_size = 0 AND ask_size = 0 THEN 1 ELSE 0 END as is_last
             FROM market_depth 
             WHERE symbol = ?
@@ -124,7 +136,7 @@ def fetch_market_depth_data(db: BookmapDatabase,
         params = (symbol, start_time, end_time)
     else:
         query = """
-            SELECT price, bid_size, ask_size, timestamp,
+            SELECT symbol, price, bid_size, ask_size, timestamp,
                    CASE WHEN bid_size = 0 AND ask_size = 0 THEN 1 ELSE 0 END as is_last
             FROM market_depth 
             WHERE symbol = ?
@@ -138,10 +150,10 @@ def fetch_market_depth_data(db: BookmapDatabase,
     
     if not depth_data:
         logger.warning(f"No market depth data found for {symbol}")
-        return pd.DataFrame(columns=['timestamp', 'price', 'bid_size', 'ask_size', 'is_last'])
+        return pd.DataFrame(columns=['symbol', 'timestamp', 'price', 'bid_size', 'ask_size', 'is_last'])
     
     # Convert to DataFrame
-    df = pd.DataFrame(depth_data, columns=['price', 'bid_size', 'ask_size', 'timestamp', 'is_last'])
+    df = pd.DataFrame(depth_data, columns=['symbol', 'price', 'bid_size', 'ask_size', 'timestamp', 'is_last'])
     
     # Convert timestamp to datetime for better plotting
     df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
@@ -298,18 +310,17 @@ def prepare_heatmap_data(df: pd.DataFrame) -> tuple:
     return times, prices, bid_sizes, ask_sizes
 
 
-def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, lookback_seconds: int = 30, current_range: Optional[List[float]] = None) -> tuple:
+def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, db: BookmapDatabase, lookback_seconds: int = 30, current_range: Optional[List[float]] = None) -> tuple:
     """
-    Calculate y-axis range based on both price and size criteria, focusing on recent data.
-    Returns the range that is smaller between:
-    1. +-20% of the price range
-    2. Range from highest bid price with non-zero size to lowest ask price with non-zero size
+    Calculate y-axis range based on the latest BID and ASK quotes from latest_quotes table.
+    Uses padding to create a visible range around the current spread.
     
     If current_range is provided, it will only make small adjustments to prevent jarring changes.
     
     Args:
-        prices: List of price levels
-        df: DataFrame with market depth data
+        prices: List of price levels (used as fallback)
+        df: DataFrame with market depth data (used as fallback)
+        db: Database connection to query latest quotes
         lookback_seconds: Number of seconds to look back for range calculation
         current_range: Current y-axis range [min, max] if available
         
@@ -318,90 +329,54 @@ def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, lookback_secon
     """
     if not prices:
         # If no prices available, use a small sensible default range instead of [0, 1]
-        ## TODO: This is a hack to prevent the bookmap from showing an empty range
         return 0.25, 0.35
-        
-    # Filter for recent data
-    if 'timestamp' in df.columns:
-        latest_time = df['timestamp'].max()
-        recent_df = df[df['timestamp'] >= latest_time - lookback_seconds]
-    else:
-        recent_df = df
     
-    # Calculate range based on recent prices
-    recent_prices = recent_df['price'].unique()
-    if len(recent_prices) > 0:
-        max_price = max(recent_prices)
-        min_price = min(recent_prices)
-    else:
+    
+    # Get the latest BID and ASK from latest_quotes table
+    symbol = df['symbol'].iloc[0] if 'symbol' in df.columns else None
+    if not symbol:
+        #print(f"No symbol found in df")
+        # If we can't get the symbol, fall back to using price range
         max_price = max(prices)
         min_price = min(prices)
+        price_range = max_price - min_price
+        return min_price - price_range * 0.20, max_price + price_range * 0.20
     
-    # For very low-priced securities like options, ensure a minimum visible range
-    price_range = max(max_price - min_price, 0.01)  # Ensure minimum range of 0.01
+    # Query latest quotes for BID and ASK
+    cursor = db.conn.execute("""
+        SELECT quote_type, value 
+        FROM latest_quotes 
+        WHERE symbol = ? AND quote_type IN ('BID', 'ASK')
+        ORDER BY timestamp DESC
+    """, (symbol,))
     
-    # Calculate initial range with padding - use percentage or absolute minimum based on price scale
-    if min_price < 1.0:  # For low-priced securities
-        # Use smaller percentage padding for low prices
-        padding_pct = 0.10  # 10% padding
-        # But ensure minimum absolute padding of 0.01
-        min_padding = max(price_range * padding_pct, 0.01)
-        price_y_min = min_price - min_padding
-        price_y_max = max_price + min_padding
-    else:
-        # Standard percentage padding for normal prices
-        price_y_min = min_price - price_range * 0.20
-        price_y_max = max_price + price_range * 0.20
+    quotes = cursor.fetchall()
+    latest_quotes = dict(quotes)
     
-    # Ensure price_y_min is never negative for most securities
-    price_y_min = max(price_y_min, 0) if min_price > 0.1 else price_y_min
+    bid_price = latest_quotes.get('BID')
+    ask_price = latest_quotes.get('ASK')
     
-    # Get latest data point for each price from recent data
-    latest_data = recent_df.groupby('price').last().reset_index()
+    if bid_price is None or ask_price is None:
+        # If we can't get both BID and ASK, fall back to using price range
+        max_price = max(prices)
+        min_price = min(prices)
+        price_range = max_price - min_price
+        return min_price - price_range * 0.20, max_price + price_range * 0.20
     
-    # Find highest bid price with non-zero size
-    highest_bid = None
-    bids = latest_data[latest_data['bid_size'] > 0]['price']
-    if not bids.empty:
-        highest_bid = bids.max()
-        
-    # Find lowest ask price with non-zero size
-    lowest_ask = None
-    asks = latest_data[latest_data['ask_size'] > 0]['price']
-    if not asks.empty:
-        lowest_ask = asks.min()
+
     
-    # If we have both bid and ask prices with size
-    if highest_bid is not None and lowest_ask is not None:
-        # Calculate the spread
-        spread = lowest_ask - highest_bid
-        
-        # For low-priced securities or tight spreads, ensure minimum visible range
-        if spread < 0.02:  # Very tight spread
-            # Ensure minimum spread visualization of 0.02
-            padding = max(spread * 2, 0.02)
-        else:
-            # Normal padding for regular spreads
-            padding = spread * 0.5
-            
-        size_y_min = highest_bid - padding
-        size_y_max = lowest_ask + padding
-        
-        # Use the smaller range between price-based and size-based
-        price_range = price_y_max - price_y_min
-        size_range = size_y_max - size_y_min
-        
-        if size_range < price_range and size_range > 0.01:  # Ensure minimum range
-            y_min, y_max = size_y_min, size_y_max
-        else:
-            y_min, y_max = price_y_min, price_y_max
-    else:
-        # Default to price-based range if we can't calculate size-based range
-        y_min, y_max = price_y_min, price_y_max
+    # Calculate padding based on bid price 
+    # Set to 20% of bid price or 2 ticks, whichever is greater
+    padding = max(bid_price * .2, 0.02)
+    #print(f"padding: {padding}")
+    
+    y_min = bid_price - padding
+    y_max = ask_price + padding
+    #print(f"Bid / ASk y_min: {y_min}, y_max: {y_max}")
     
     # Ensure minimum range size for visibility - especially important for options
     range_size = y_max - y_min
-    min_range_size = 0.03 if min_price < 1.0 else 0.1  # Different minimums based on price scale
+    min_range_size = 0.03 if min(prices) < 1.0 else 0.1  # Different minimums based on price scale
     
     if range_size < min_range_size:
         # Center the range around the middle point and expand
@@ -434,6 +409,7 @@ def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, lookback_secon
                 # Limit the change if it's too drastic
                 y_max = current_max + (1 if y_max > current_max else -1) * max_change
     
+    #print(f"Final y_min: {y_min}, y_max: {y_max}")
     return y_min, y_max
 
 
@@ -528,9 +504,6 @@ def create_bookmap(db: BookmapDatabase,
     normalized_bid_sizes = bid_sizes / max_size
     normalized_ask_sizes = ask_sizes / max_size
     
-    # Use fixed price_diff instead of calculating from prices
-    price_diff = 0.01  # Fixed price increment
-    
     # Add bid size heatmap
     fig.add_trace(go.Heatmap(
         x=times,
@@ -562,7 +535,7 @@ def create_bookmap(db: BookmapDatabase,
     ))
 
     # Calculate y-axis range based on both price and size criteria
-    y_min, y_max = calculate_y_axis_range(prices, df, lookback_seconds=30, current_range=current_range)
+    y_min, y_max = calculate_y_axis_range(prices, df, db, lookback_seconds=30, current_range=current_range)
 
     # Update layout with fixed sizes
     fig.update_layout(
@@ -580,9 +553,7 @@ def create_bookmap(db: BookmapDatabase,
     # Use fixed font sizes instead of calculating them
     price_font_size = 20  # Reduced from 10
     size_font_size = 20   # Reduced from 10
-    header_font_size = 20  # Slightly larger for headers
     trade_font_size = 20   # Reduced from 10
-    circle_size = 20      # Reduced circle size for trade markers
 
     # Add trade size markers with dynamic size based on trade size
     if not trade_df.empty:
@@ -706,31 +677,6 @@ def create_bookmap(db: BookmapDatabase,
                 font=dict(size=size_font_size, color='lime'),
                 align='center'
             ))
-
-    # Add column header annotations
-    header_y_position = y_max + (y_max - y_min) * 0.01  # Position closer to the top of the chart
-    
-    """ annotations.append(dict(
-        x=1.05,  # Position for price header
-        y=header_y_position,
-        xref='paper',
-        yref='y',
-        text="Price",
-        showarrow=False,
-        font=dict(size=header_font_size, color='white', family='Arial Black'),
-        align='center'
-    ))
-    
-    annotations.append(dict(
-        x=1.15,  # Position for size header
-        y=header_y_position,
-        xref='paper',
-        yref='y',
-        text="Size",
-        showarrow=False,
-        font=dict(size=header_font_size, color='white', family='Arial Black'),
-        align='center'
-    )) """
 
     # Update layout with more visible borders and column headers
     fig.update_layout(
@@ -907,7 +853,8 @@ def update_bookmap_live(fig: go.Figure,
         
         # Calculate y-axis range based on recent data
         # Use a shorter lookback for y-axis range to make it more responsive
-        y_min, y_max = calculate_y_axis_range(prices, df, lookback_seconds=30, current_range=current_range)
+        y_min, y_max = calculate_y_axis_range(prices, df, db, lookback_seconds=30, current_range=current_range)
+        #print(f"Update_bookmap_live y_min: {y_min}, y_max: {y_max}")
         
         # Use the calculated range
         new_y_min = y_min
