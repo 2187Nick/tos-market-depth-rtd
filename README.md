@@ -1,6 +1,8 @@
 # TOS Market Depth RTD
 
-A Bookmap-style visualization tool for displaying real-time market depth data from ThinkorSwim's RTD server. This is a rough v1. Improvements coming.
+A Bookmap-style visualization tool for displaying real-time market depth data from ThinkorSwim's RTD server. 
+
+This is a rough v1. Improvements coming.
 
 ![](https://github.com/user-attachments/assets/ed78e5ea-8d38-48fa-883a-f53a3b072b1e)
 
