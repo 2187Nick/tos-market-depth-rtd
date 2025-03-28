@@ -242,7 +242,6 @@ def safe_min_max_prices(x, df):
         
     return (min_ask, max_bid)
 
-
 def prepare_heatmap_data(df: pd.DataFrame) -> tuple:
     """
     Prepare data for the bid and ask heatmaps.
@@ -493,8 +492,13 @@ def create_bookmap(db: BookmapDatabase,
     
     # Make sure we have some non-zero values by adding small epsilon to empty cells
     epsilon = 1e-10
+
+    #print(f"bid_sizes: {bid_sizes}")
+    #print(f"ask_sizes: {ask_sizes}")
+
     bid_sizes = np.maximum(bid_sizes, epsilon)
     ask_sizes = np.maximum(ask_sizes, epsilon)
+    
     
     # Use the larger of the two maximums for consistent scaling
     max_size = max(max_bid_size, max_ask_size)
@@ -512,8 +516,8 @@ def create_bookmap(db: BookmapDatabase,
         colorscale=BID_COLORSCALE,
         showscale=False,
         name=f"Bid Size (Max: {int(max_bid_size)})",
-        hovertemplate='Time: %{x}<br>Price: %{y}<br>Bid Size: %{customdata:,d}<extra></extra>',
         customdata=bid_sizes.astype(int),
+        hovertemplate='Time: %{x}<br>Price: %{y}<br><extra></extra>',
         zmin=0,
         zmax=1,
         yhoverformat='.2f'
@@ -527,8 +531,8 @@ def create_bookmap(db: BookmapDatabase,
         colorscale=ASK_COLORSCALE,
         showscale=False,
         name=f"Ask Size (Max: {int(max_ask_size)})",
-        hovertemplate='Time: %{x}<br>Price: %{y}<br>Ask Size: %{customdata:,d}<extra></extra>',
         customdata=ask_sizes.astype(int),
+        hovertemplate='Time: %{x}<br>Price: %{y}<br><extra></extra>',
         zmin=0,
         zmax=1,
         yhoverformat='.2f'
@@ -798,6 +802,9 @@ def update_bookmap_live(fig: go.Figure,
     
     # Make sure we have some non-zero values by adding small epsilon to empty cells
     epsilon = 1e-10
+
+    #print(f"bid_sizes2: {bid_sizes}")
+    #print(f"ask_sizes2: {ask_sizes}")
     bid_sizes = np.maximum(bid_sizes, epsilon)
     ask_sizes = np.maximum(ask_sizes, epsilon)
     
@@ -820,7 +827,7 @@ def update_bookmap_live(fig: go.Figure,
         zmin=0,
         zmax=1,
         yhoverformat='.2f',
-        hovertemplate='Time: %{x}<br>Price: %{y}<br>Bid Size: %{customdata:,d}<extra></extra>'
+        hovertemplate='Time: %{x}<br>Price: %{y}<br><extra></extra>'
     )
     
     # Update ask heatmap
@@ -834,7 +841,7 @@ def update_bookmap_live(fig: go.Figure,
         zmin=0,
         zmax=1,
         yhoverformat='.2f',
-        hovertemplate='Time: %{x}<br>Price: %{y}<br>Ask Size: %{customdata:,d}<extra></extra>'
+        hovertemplate='Time: %{x}<br>Price: %{y}<br><extra></extra>'
     )
 
     # Get current y-axis range
