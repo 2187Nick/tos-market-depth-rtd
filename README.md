@@ -1,18 +1,16 @@
 # TOS Market Depth RTD
 
-A Bookmap-style visualization tool for displaying real-time market depth data from ThinkorSwim's RTD server, providing a dynamic view of market liquidity.
+A Bookmap-style visualization tool for displaying real-time market depth data from ThinkorSwim's RTD server. This is a rough v1. Improvements coming.
 
 ![](https://github.com/user-attachments/assets/ed78e5ea-8d38-48fa-883a-f53a3b072b1e)
+
+https://github.com/user-attachments/assets/0f836aac-8b71-425e-9b22-9530e8dcd742
+
 
 ## Features
 
 - Real-time market depth visualization in Bookmap style
-- Live updating heatmap showing bid/ask size at different price levels
 - Stores RTD data in SQLite database for persistence and analysis
-- Interactive web interface with Plotly and Dash
-- Responsive design with zoom and pause controls
-- Symbol switching without restarting the application
-- Historical view
 
 ## Installation
 
