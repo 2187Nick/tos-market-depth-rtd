@@ -52,11 +52,18 @@ python app.py
 
 3. Enter an option symbol in the interface:
 ```
+Examples:
 Stock options: .SPY250417C550
 E-mini S&P 500 Index Future Options: ./EWJ25C5725:XCME
 Nasdaq 100 Index Options: .NDX250417C20000
 Oil Future Options: ./LO4H25C70:XNYM
 10-Year Us Treasury Note Futures Options: ./ZN2J25C110.75:XCBT
+```
+
+``` 
+To get the symbol:
+Go to the option chain page.
+Right click on any option and then click "copy" on symbol name.
 ```
 
 4. Click "Start" to begin visualization
@@ -100,5 +107,11 @@ You can adjust settings in the `config/settings.json` file:
 Backend:
 
 [PYRTDC](https://github.com/tifoji/pyrtdc/)
+
+## Notes
+
+1. This does not capture all trades or all market liquidity.
+2. The API version captures more market liquidity(A combo version might be coming..).
+3. This is experimental and mainly just for exploring what's possible.
 
 
