@@ -16,7 +16,7 @@ from src.core.logger import get_logger
 logger = get_logger(__name__)
 
 class BookmapDashApp:
-    def __init__(self, symbol: str, update_interval: int = 2):
+    def __init__(self, symbol: str, update_interval: int = 1):
         # Create app with custom stylesheet
         self.app = Dash(
             __name__, 
@@ -87,11 +87,17 @@ class BookmapDashApp:
                     .start-button:hover {
                         background-color: #45a049;
                     }
-                    .time-display {
+                    .time-display, .zoom-display {
                         font-family: 'Roboto', sans-serif;
                         font-size: 14px;
                         min-width: 60px;
                         text-align: center;
+                    }
+                    .control-label {
+                        color: white;
+                        margin: 0 10px;
+                        font-family: 'Roboto', sans-serif;
+                        font-size: 14px;
                     }
                 </style>
                 <script>
@@ -244,6 +250,13 @@ class BookmapDashApp:
                     html.Button('-', id='decrease-time', className='control-button'),
                     html.Div(id='time-display', className='time-display', style={'color': 'white', 'margin': '0 10px'}),
                     html.Button('+', id='increase-time', className='control-button'),
+                ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': '20px'}),
+                # Add y-axis zoom controls
+                html.Div([
+                    html.Div("Y-Zoom:", className='control-label'),
+                    html.Button('-', id='decrease-y-zoom', className='control-button'),
+                    html.Div(id='y-zoom-display', className='zoom-display', style={'color': 'white', 'margin': '0 10px'}),
+                    html.Button('+', id='increase-y-zoom', className='control-button'),
                 ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': '20px'})
             ], className='control-panel'),
             html.Div(id='status-message',
@@ -257,7 +270,8 @@ class BookmapDashApp:
             dcc.Store(id='app-state', storage_type='memory', data={'is_paused': True, 'is_started': False}),
             dcc.Store(id='symbol-store', storage_type='memory', data={'symbol': ""}),
             dcc.Store(id='store-symbol-clientside', storage_type='memory'),
-            dcc.Store(id='time-window-store', storage_type='memory', data={'minutes': 5}),
+            dcc.Store(id='time-window-store', storage_type='memory', data={'minutes': 1}),
+            dcc.Store(id='y-zoom-store', storage_type='memory', data={'padding_factor': 0.01}),
             dcc.Interval(
                 id='interval-component',
                 interval=update_interval * 1000,
@@ -335,6 +349,46 @@ class BookmapDashApp:
                 new_minutes = max(1, current_minutes - 1)  # Minimum 1 minute
                 
             return {'minutes': new_minutes}, f'{new_minutes} min'
+
+        # Add y-axis zoom control callbacks
+        @app.callback(
+            [Output('y-zoom-store', 'data'),
+             Output('y-zoom-display', 'children')],
+            [Input('increase-y-zoom', 'n_clicks'),
+             Input('decrease-y-zoom', 'n_clicks')],
+            [State('y-zoom-store', 'data')]
+        )
+        def update_y_zoom(increase_clicks, decrease_clicks, zoom_data):
+            ctx = callback_context
+            if not ctx.triggered:
+                padding = zoom_data.get('padding_factor', 0.01) if zoom_data else 0.01
+                return {'padding_factor': padding}, f'{int(padding * 100)}%'
+                
+            button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+            current_padding = zoom_data.get('padding_factor', 0.01) if zoom_data else 0.01
+            
+            if button_id == 'decrease-y-zoom':  # Zoom in (less padding)
+                if current_padding <= 0.05:  # If we're at or below 5%, decrement by 1%
+                    new_padding = max(0.01, current_padding - 0.01)  # Minimum 1% padding
+                else:  # Otherwise decrement by 5%
+                    new_padding = max(0.05, current_padding - 0.05)  # Don't go below 5% in a large step
+            else:  # increase-y-zoom (more padding)
+                if current_padding < 0.05:  # If we're below 5%, increment by 1%
+                    new_padding = min(1.0, current_padding + 0.01)
+                else:  # Otherwise increment by 5%
+                    new_padding = min(1.0, current_padding + 0.05)  # Maximum 100% padding
+                
+            return {'padding_factor': new_padding}, f'{int(new_padding * 100)}%'
+
+        # Initialize y-zoom display
+        @app.callback(
+            Output('y-zoom-display', 'children', allow_duplicate=True),
+            Input('y-zoom-store', 'data'),
+            prevent_initial_call=True
+        )
+        def init_y_zoom_display(zoom_data):
+            padding = zoom_data.get('padding_factor', 0.01) if zoom_data else 0.01
+            return f'{int(padding * 100)}%'
 
         # Initialize time display
         @app.callback(
@@ -499,12 +553,13 @@ class BookmapDashApp:
             [Input('interval-component', 'n_intervals'),
              Input('zoom-store', 'data'),
              Input('symbol-store', 'data'),
-             Input('time-window-store', 'data')],  # Add time window input
+             Input('time-window-store', 'data'),
+             Input('y-zoom-store', 'data')],  # Add y-zoom input
             [State('app-state', 'data'),
              State('live-bookmap', 'figure')],
             prevent_initial_call=True
         )
-        def update_bookmap(n_intervals, zoom_data, symbol_data, time_data, app_state, current_fig):
+        def update_bookmap(n_intervals, zoom_data, symbol_data, time_data, y_zoom_data, app_state, current_fig):
             # Define status_style at the beginning of the function
             status_style = {'color': 'white', 'textAlign': 'center', 'margin': '0 0 5px 0'}
             
@@ -688,12 +743,16 @@ class BookmapDashApp:
                         current_range = current_fig.layout.yaxis.range
                         logger.debug(f"Passing current range to new bookmap: {current_range}")
                     
+                    # Get padding factor from y-zoom-store
+                    padding_factor = y_zoom_data.get('padding_factor', 0.01) if y_zoom_data else 0.01
+                    
                     fig = bookmap_viz.create_bookmap(
                         db=self.db,
                         symbol=current_symbol,
                         start_time=None,  # Load all data
                         end_time=end_time,
-                        current_range=current_range
+                        current_range=current_range,
+                        padding_factor=padding_factor
                     )
                     
                     # Set the x-axis range to show only the last X minutes in EST
@@ -703,6 +762,9 @@ class BookmapDashApp:
                     fig.update_xaxes(range=[display_start_dt, display_end_dt])
                     
                 else:
+                    # Get padding factor from y-zoom-store
+                    padding_factor = y_zoom_data.get('padding_factor', 0.01) if y_zoom_data else 0.01
+                    
                     # Update the existing figure
                     if not valid_fig:
                         logger.warning("Unexpected invalid figure in update_bookmap, creating new one")
@@ -739,19 +801,21 @@ class BookmapDashApp:
                             )
                         )
                         
-                        # Now load the actual bookmap data
+                        # Now load the actual bookmap data with custom padding factor
                         fig = bookmap_viz.create_bookmap(
                             db=self.db,
                             symbol=current_symbol,
                             start_time=None,  # Load all data
-                            end_time=time.time()
+                            end_time=time.time(),
+                            padding_factor=padding_factor
                         )
                     else:
                         fig = bookmap_viz.update_bookmap_live(
                             fig=current_fig,
                             db=self.db,
                             symbol=current_symbol,
-                            lookback_seconds=display_seconds  # Use the time window setting
+                            lookback_seconds=display_seconds,  # Use the time window setting
+                            padding_factor=padding_factor
                         )
                 
                 # Apply saved zoom state if available
@@ -888,6 +952,6 @@ class BookmapDashApp:
             logger.error(f"Error running Dash server: {e}")
             raise
 
-def create_dash_app(symbol: str, update_interval: int = 2) -> BookmapDashApp:
+def create_dash_app(symbol: str, update_interval: int = 1) -> BookmapDashApp:
     """Create and return a BookmapDashApp instance."""
     return BookmapDashApp(symbol, update_interval)

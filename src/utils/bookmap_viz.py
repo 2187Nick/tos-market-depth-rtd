@@ -24,9 +24,9 @@ BID_COLORSCALE = [[0, 'rgba(0,255,0,0)'], [0.1, 'rgba(0,255,0,0.3)'], [0.5, 'rgb
 ASK_COLORSCALE = [[0, 'rgba(255,0,0,0)'], [0.1, 'rgba(255,0,0,0.3)'], [0.5, 'rgba(255,0,0,0.7)'], [1, 'rgba(255,0,0,1)']]  # Red gradient
 
 # Constants for trade size circle scaling
-MIN_CIRCLE_SIZE = 20  # Minimum circle size
-MAX_CIRCLE_SIZE = 80  # Maximum circle size
-SIZE_SCALE_FACTOR = 0.5  # Adjusts overall scaling
+MIN_CIRCLE_SIZE = 30  # Minimum circle size
+MAX_CIRCLE_SIZE = 100  # Maximum circle size
+SIZE_SCALE_FACTOR = 0.7  # Adjusts overall scaling
 
 
 def create_bookmap_figure(title: str = "Market Depth Bookmap") -> go.Figure:
@@ -217,31 +217,6 @@ def fetch_last_size_data(db: BookmapDatabase,
     return df
 
 
-def safe_min_max_prices(x, df):
-    """Helper function to safely get min ask and max bid prices."""
-    ask_mask = df.loc[x.index, 'ask_size'] > 0
-    bid_mask = df.loc[x.index, 'bid_size'] > 0
-    
-    ask_prices = x[ask_mask]
-    bid_prices = x[bid_mask]
-    
-    min_ask = None
-    max_bid = None
-    
-    try:
-        if not ask_prices.empty:
-            min_ask = min(ask_prices)
-    except (ValueError, TypeError):
-        pass
-        
-    try:
-        if not bid_prices.empty:
-            max_bid = max(bid_prices)
-    except (ValueError, TypeError):
-        pass
-        
-    return (min_ask, max_bid)
-
 def prepare_heatmap_data(df: pd.DataFrame) -> tuple:
     """
     Prepare data for the bid and ask heatmaps.
@@ -309,7 +284,7 @@ def prepare_heatmap_data(df: pd.DataFrame) -> tuple:
     return times, prices, bid_sizes, ask_sizes
 
 
-def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, db: BookmapDatabase, lookback_seconds: int = 30, current_range: Optional[List[float]] = None) -> tuple:
+def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, db: BookmapDatabase, lookback_seconds: int = 30, current_range: Optional[List[float]] = None, padding_factor: float = 0.2) -> tuple:
     """
     Calculate y-axis range based on the latest BID and ASK quotes from latest_quotes table.
     Uses padding to create a visible range around the current spread.
@@ -322,6 +297,7 @@ def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, db: BookmapDat
         db: Database connection to query latest quotes
         lookback_seconds: Number of seconds to look back for range calculation
         current_range: Current y-axis range [min, max] if available
+        padding_factor: Factor to use for padding (0.2 = 20% padding)
         
     Returns:
         Tuple of (y_min, y_max)
@@ -339,7 +315,7 @@ def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, db: BookmapDat
         max_price = max(prices)
         min_price = min(prices)
         price_range = max_price - min_price
-        return min_price - price_range * 0.20, max_price + price_range * 0.20
+        return min_price - price_range * padding_factor, max_price + price_range * padding_factor
     
     # Query latest quotes for BID and ASK
     cursor = db.conn.execute("""
@@ -360,13 +336,13 @@ def calculate_y_axis_range(prices: List[float], df: pd.DataFrame, db: BookmapDat
         max_price = max(prices)
         min_price = min(prices)
         price_range = max_price - min_price
-        return min_price - price_range * 0.20, max_price + price_range * 0.20
+        return min_price - price_range * padding_factor, max_price + price_range * padding_factor
     
 
     
     # Calculate padding based on bid price 
-    # Set to 20% of bid price or 2 ticks, whichever is greater
-    padding = max(bid_price * .2, 0.02)
+    # Set to padding_factor of bid price or 2 ticks, whichever is greater
+    padding = max(bid_price * padding_factor, 0.02)
     #print(f"padding: {padding}")
     
     y_min = bid_price - padding
@@ -417,7 +393,8 @@ def create_bookmap(db: BookmapDatabase,
                  start_time: Optional[float] = None,
                  end_time: Optional[float] = None,
                  size_scaling: float = 0.05,
-                 current_range: Optional[List[float]] = None) -> go.Figure:
+                 current_range: Optional[List[float]] = None,
+                 padding_factor: float = 0.2) -> go.Figure:
     """
     Create a bookmap visualization for market depth data.
     
@@ -428,6 +405,7 @@ def create_bookmap(db: BookmapDatabase,
         end_time: End timestamp (default: current time)
         size_scaling: Size scaling factor
         current_range: Optional current y-axis range to preserve
+        padding_factor: Factor to use for padding (0.2 = 20% padding)
         
     Returns:
         Plotly figure with bookmap visualization
@@ -538,8 +516,8 @@ def create_bookmap(db: BookmapDatabase,
         yhoverformat='.2f'
     ))
 
-    # Calculate y-axis range based on both price and size criteria
-    y_min, y_max = calculate_y_axis_range(prices, df, db, lookback_seconds=30, current_range=current_range)
+    # Calculate y-axis range based on both price and size criteria, using custom padding_factor
+    y_min, y_max = calculate_y_axis_range(prices, df, db, lookback_seconds=30, current_range=current_range, padding_factor=padding_factor)
 
     # Update layout with fixed sizes
     fig.update_layout(
@@ -644,43 +622,45 @@ def create_bookmap(db: BookmapDatabase,
         else:
             latest_ask = 0
         
-        # Price column (column 1)
-        annotations.append(dict(
-            x=1.05,  # Position for price labels
-            y=price,
-            xref='paper',
-            yref='y',
-            text=f"{price:.2f}",
-            showarrow=False,
-            font=dict(size=price_font_size, color='white'),
-            align='right'
-        ))
-        
-        # Size column (column 2) - Only add annotation if size is significantly non-zero
-        if latest_ask > epsilon:  # Only show if truly non-zero (not epsilon)
-            # Show only ask size (red text)
+        # Only add price to the column if there's an active bid or ask size
+        if latest_bid > epsilon or latest_ask > epsilon:
+            # Price column (column 1)
             annotations.append(dict(
-                x=1.15,  # Position for size labels
+                x=1.05,  # Position for price labels
                 y=price,
                 xref='paper',
                 yref='y',
-                text=f"{int(latest_ask)}",
+                text=f"{price:.2f}",
                 showarrow=False,
-                font=dict(size=size_font_size, color='red'),
-                align='center'
+                font=dict(size=price_font_size, color='white'),
+                align='right'
             ))
-        elif latest_bid > epsilon:  # Only show if truly non-zero (not epsilon)
-            # Show only bid size (green text)
-            annotations.append(dict(
-                x=1.15,  # Position for size labels
-                y=price,
-                xref='paper',
-                yref='y',
-                text=f"{int(latest_bid)}",
-                showarrow=False,
-                font=dict(size=size_font_size, color='lime'),
-                align='center'
-            ))
+            
+            # Size column (column 2) - Only add annotation if size is significantly non-zero
+            if latest_ask > epsilon:  # Only show if truly non-zero (not epsilon)
+                # Show only ask size (red text)
+                annotations.append(dict(
+                    x=1.15,  # Position for size labels
+                    y=price,
+                    xref='paper',
+                    yref='y',
+                    text=f"{int(latest_ask)}",
+                    showarrow=False,
+                    font=dict(size=size_font_size, color='red'),
+                    align='center'
+                ))
+            elif latest_bid > epsilon:  # Only show if truly non-zero (not epsilon)
+                # Show only bid size (green text)
+                annotations.append(dict(
+                    x=1.15,  # Position for size labels
+                    y=price,
+                    xref='paper',
+                    yref='y',
+                    text=f"{int(latest_bid)}",
+                    showarrow=False,
+                    font=dict(size=size_font_size, color='lime'),
+                    align='center'
+                ))
 
     # Update layout with more visible borders and column headers
     fig.update_layout(
@@ -751,7 +731,8 @@ def update_bookmap_live(fig: go.Figure,
                       db: BookmapDatabase,
                       symbol: str,
                       lookback_seconds: int = 30,
-                      force_y_update: bool = False) -> go.Figure:
+                      force_y_update: bool = False,
+                      padding_factor: float = 0.2) -> go.Figure:
     """
     Update a bookmap figure with the latest market depth data.
     
@@ -761,6 +742,7 @@ def update_bookmap_live(fig: go.Figure,
         symbol: Symbol to display
         lookback_seconds: Number of seconds to look back for data
         force_y_update: Whether to force update the y-axis range
+        padding_factor: Factor to use for padding (0.2 = 20% padding)
         
     Returns:
         Updated figure
@@ -858,9 +840,9 @@ def update_bookmap_live(fig: go.Figure,
         (current_range[0] == 0 and current_range[1] == 1) or
         not all(isinstance(x, (int, float)) for x in current_range)):
         
-        # Calculate y-axis range based on recent data
+        # Calculate y-axis range based on recent data with custom padding_factor
         # Use a shorter lookback for y-axis range to make it more responsive
-        y_min, y_max = calculate_y_axis_range(prices, df, db, lookback_seconds=30, current_range=current_range)
+        y_min, y_max = calculate_y_axis_range(prices, df, db, lookback_seconds=30, current_range=current_range, padding_factor=padding_factor)
         #print(f"Update_bookmap_live y_min: {y_min}, y_max: {y_max}")
         
         # Use the calculated range
