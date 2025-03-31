@@ -33,7 +33,7 @@ cd tos-market-depth-rtd
 2. Create a virtual environment
 ```
 python -m venv venv
-venv/bin/activate
+venv\Scripts\activate
 ```
 
 3. Install dependencies
